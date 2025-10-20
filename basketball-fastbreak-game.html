@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fast Break Basketball Strategy Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Inter:wght@400;700;800;900&display=swap');
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            touch-action: none; /* Prevents scrolling on touch devices during drag */
+        }
+        .strategy-card {
+            cursor: grab;
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .strategy-card:active {
+            cursor: grabbing;
+            transform: scale(1.05);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            z-index: 50;
+        }
+        .dragging { opacity: 0.5; }
+        .drop-zone {
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+            min-height: 80px;
+        }
+        .drop-zone.drag-over { background-color: #fef9c3; border-color: #facc15; }
+        .drop-zone.correct { background-color: #dcfce7; border-color: #22c55e; }
+        .drop-zone.incorrect {
+            animation: shake 0.5s;
+            background-color: #fee2e2;
+            border-color: #ef4444;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .player {
+            font-weight: bold;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .offense { background-color: #3b82f6; }
+        .defense { background-color: #ef4444; }
+        .ball-handler::after {
+            content: '🏀';
+            position: absolute;
+            font-size: 10px;
+            bottom: -5px;
+            right: -5px;
+        }
+        /* Modal Styles */
+        .modal-overlay {
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0.3s;
+        }
+        .modal-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .modal-content {
+            transform: scale(0.8) translateY(20px);
+            opacity: 0;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .modal-overlay.visible .modal-content {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+        }
+        .confetti-bounce {
+            animation: bounce-animation 1.5s infinite;
+        }
+        @keyframes bounce-animation {
+            0%, 100% { transform: translateY(-8%); animation-timing-function: cubic-bezier(0.8, 0, 1, 1); }
+            50% { transform: translateY(0); animation-timing-function: cubic-bezier(0, 0, 0.2, 1); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="container relative mx-auto max-w-5xl bg-white rounded-2xl shadow-xl p-6 md:p-10">
+        <!-- Language Toggle -->
+        <div class="absolute top-4 right-4 z-10">
+            <button id="lang-toggle" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg transition-colors text-sm">
+                繁體中文
+            </button>
+        </div>
+        
+        <!-- Header -->
+        <div class="text-center mb-8 pt-8 md:pt-0">
+            <h1 data-lang-key="mainTitle" class="text-3xl md:text-4xl font-bold text-gray-800">Fast Break Basketball Strategy</h1>
+            <p data-lang-key="subTitle" class="text-gray-600 mt-2 max-w-2xl mx-auto">Look at the defender. Pick the best move and drag it to the right picture.</p>
+        </div>
+
+        <!-- Draggable Strategy Options -->
+        <div id="strategy-options-container" class="flex flex-col md:flex-row justify-center items-center gap-4 mb-10 p-4 bg-gray-50 rounded-lg min-h-[76px]">
+            <div id="drag-attack" draggable="true" class="strategy-card w-full md:w-auto text-center bg-orange-500 text-white font-bold py-3 px-6 rounded-lg shadow-md" data-strategy="attack" data-lang-key="attack">
+                Attack the Defender
+            </div>
+            <div id="drag-read" draggable="true" class="strategy-card w-full md:w-auto text-center bg-yellow-500 text-white font-bold py-3 px-6 rounded-lg shadow-md" data-strategy="read" data-lang-key="read">
+                Read the Defender
+            </div>
+            <div id="drag-space" draggable="true" class="strategy-card w-full md:w-auto text-center bg-lime-500 text-white font-bold py-3 px-6 rounded-lg shadow-md" data-strategy="space" data-lang-key="space">
+                Maintain Spacing
+            </div>
+        </div>
+
+        <!-- Scenarios and Drop Zones -->
+        <div class="grid md:grid-cols-3 gap-6">
+            <!-- Scenario A -->
+            <div class="flex flex-col bg-gray-50 rounded-xl border border-gray-200 p-5">
+                <h3 data-lang-key="scenarioA" class="text-xl font-bold mb-3 text-gray-700">Scenario A</h3>
+                <div class="relative w-full aspect-[4/3] bg-orange-300 rounded-md p-2 flex items-center justify-center">
+                    <svg class="absolute w-full h-full" viewBox="0 0 150 112.5"><rect x="35" y="0" width="80" height="70" stroke="white" stroke-width="1" fill="none"/><circle cx="75" cy="70" r="30" stroke="white" stroke-width="1" fill="none" stroke-dasharray="2 2"/><path d="M 5 0 A 70 70 0 0 1 145 0" stroke="white" stroke-width="1" fill="none"/><rect x="65" y="10" width="20" height="1" stroke="white" stroke-width="1.5" /><circle cx="75" cy="17" r="7.5" stroke="white" stroke-width="1" fill="none"/></svg>
+                    <div class="player offense ball-handler absolute w-6 h-6 rounded-full" style="left: 25%; top: 60%;">1</div><div class="player offense absolute w-6 h-6 rounded-full" style="left: 65%; top: 60%;">2</div><div class="player defense absolute w-6 h-6 rounded-full" style="left: 45%; top: 35%;">3</div>
+                    <svg class="absolute w-full h-full" viewBox="0 0 100 75"><path d="M 32 50 Q 42 42, 48 35" stroke="#1e293b" stroke-width="1.5" fill="none" stroke-dasharray="3 3"/><path d="M 45 32 L 48 35 L 43 36 Z" fill="#1e293b"/></svg>
+                </div>
+                <p data-lang-key="descA" class="mt-4 text-sm text-gray-600 flex-grow">Go straight to the defender. This makes them choose who to guard and gives you a chance to score.</p>
+                <div id="drop-a" data-answer="attack" class="drop-zone mt-3 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center text-gray-400 p-4">
+                    <span data-lang-key="dropZoneText">Drag strategy here</span>
+                </div>
+            </div>
+            <!-- Scenario B -->
+            <div class="flex flex-col bg-gray-50 rounded-xl border border-gray-200 p-5">
+                <h3 data-lang-key="scenarioB" class="text-xl font-bold mb-3 text-gray-700">Scenario B</h3>
+                 <div class="relative w-full aspect-[4/3] bg-orange-300 rounded-md p-2 flex items-center justify-center">
+                    <svg class="absolute w-full h-full" viewBox="0 0 150 112.5"><rect x="35" y="0" width="80" height="70" stroke="white" stroke-width="1" fill="none"/><circle cx="75" cy="70" r="30" stroke="white" stroke-width="1" fill="none" stroke-dasharray="2 2"/><path d="M 5 0 A 70 70 0 0 1 145 0" stroke="white" stroke-width="1" fill="none"/><rect x="65" y="10" width="20" height="1" stroke="white" stroke-width="1.5" /><circle cx="75" cy="17" r="7.5" stroke="white" stroke-width="1" fill="none"/></svg>
+                    <div class="player offense ball-handler absolute w-6 h-6 rounded-full" style="left: 25%; top: 60%;">1</div><div class="player offense absolute w-6 h-6 rounded-full" style="left: 65%; top: 60%;">2</div><div class="player defense absolute w-6 h-6 rounded-full" style="left: 45%; top: 35%;">3</div>
+                     <svg class="absolute w-full h-full" viewBox="0 0 100 75"><path d="M 32 50 Q 48 50, 63 50" stroke="#1e293b" stroke-width="1.5" fill="none" stroke-dasharray="3 3"/><path d="M 60 47 L 63 50 L 60 53 Z" fill="#1e293b"/><path d="M 30 48 Q 30 38, 40 30" stroke="#1e293b" stroke-width="1.5" fill="none" stroke-dasharray="3 3"/><path d="M 37 27 L 40 30 L 35 31 Z" fill="#1e293b"/></svg>
+                </div>
+                <p data-lang-key="descB" class="mt-4 text-sm text-gray-600 flex-grow">Watch what the defender does. Then, decide if you should pass the ball or go score yourself.</p>
+                <div id="drop-b" data-answer="read" class="drop-zone mt-3 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center text-gray-400 p-4">
+                    <span data-lang-key="dropZoneText">Drag strategy here</span>
+                </div>
+            </div>
+            <!-- Scenario C -->
+            <div class="flex flex-col bg-gray-50 rounded-xl border border-gray-200 p-5">
+                <h3 data-lang-key="scenarioC" class="text-xl font-bold mb-3 text-gray-700">Scenario C</h3>
+                <div class="relative w-full aspect-[4/3] bg-orange-300 rounded-md p-2 flex items-center justify-center">
+                    <svg class="absolute w-full h-full" viewBox="0 0 150 112.5"><rect x="35" y="0" width="80" height="70" stroke="white" stroke-width="1" fill="none"/><circle cx="75" cy="70" r="30" stroke="white" stroke-width="1" fill="none" stroke-dasharray="2 2"/><path d="M 5 0 A 70 70 0 0 1 145 0" stroke="white" stroke-width="1" fill="none"/><rect x="65" y="10" width="20" height="1" stroke="white" stroke-width="1.5" /><circle cx="75" cy="17" r="7.5" stroke="white" stroke-width="1" fill="none"/></svg>
+                    <div class="player offense ball-handler absolute w-6 h-6 rounded-full" style="left: 10%; top: 55%;">1</div><div class="player offense absolute w-6 h-6 rounded-full" style="left: 80%; top: 55%;">2</div><div class="player defense absolute w-6 h-6 rounded-full" style="left: 45%; top: 35%;">3</div>
+                </div>
+                <p data-lang-key="descC" class="mt-4 text-sm text-gray-600 flex-grow">Stay far from your teammate. This makes it hard for one defender to guard both of you.</p>
+                <div id="drop-c" data-answer="space" class="drop-zone mt-3 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center text-gray-400 p-4">
+                    <span data-lang-key="dropZoneText">Drag strategy here</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex justify-center items-center mt-8">
+            <button id="reset-button" data-lang-key="reset" class="bg-gray-700 hover:bg-gray-800 text-white font-bold py-2 px-6 rounded-lg transition-colors">
+                Reset Game
+            </button>
+        </div>
+    </div>
+
+    <!-- Win Modal -->
+    <div id="win-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+        <div class="modal-content bg-white rounded-2xl shadow-2xl p-6 md:p-8 text-center max-w-sm mx-auto">
+            <div class="text-8xl md:text-9xl mb-4 confetti-bounce">🎉</div>
+            <h2 data-lang-key="winTitle" class="text-3xl md:text-4xl font-bold text-gray-800 mb-2">Congratulations!</h2>
+            <div class="flex justify-center items-baseline text-green-500">
+                <p class="text-7xl md:text-8xl font-black">100</p>
+                <p data-lang-key="winUnit" class="text-xl md:text-2xl font-bold ml-2">Points</p>
+            </div>
+            <button id="play-again-button" data-lang-key="playAgain" class="mt-8 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-lg transition-colors text-lg w-full">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+
+    <script>
+        // --- DOM Elements ---
+        const draggables = document.querySelectorAll('.strategy-card');
+        const dropZones = document.querySelectorAll('.drop-zone');
+        const strategyContainer = document.getElementById('strategy-options-container');
+        const resetButton = document.getElementById('reset-button');
+        const langToggleButton = document.getElementById('lang-toggle');
+        const winModal = document.getElementById('win-modal');
+        const playAgainButton = document.getElementById('play-again-button');
+
+        // --- State ---
+        let correctCount = 0;
+        let currentLanguage = 'en';
+
+        // --- Translations ---
+        const translations = {
+            en: {
+                mainTitle: 'Fast Break Basketball Strategy', 
+                subTitle: "Look at the defender. Pick the best move and drag it to the right picture.",
+                attack: 'Attack the Defender', 
+                read: 'Read the Defender', 
+                space: 'Maintain Spacing',
+                scenarioA: 'Scenario A', 
+                descA: 'Go straight to the defender. This makes them choose who to guard and gives you a chance to score.',
+                scenarioB: 'Scenario B', 
+                descB: "Watch what the defender does. Then, decide if you should pass the ball or go score yourself.",
+                scenarioC: 'Scenario C', 
+                descC: 'Stay far from your teammate. This makes it hard for one defender to guard both of you.',
+                dropZoneText: 'Drag strategy here', 
+                reset: 'Reset Game', 
+                langToggle: '繁體中文',
+                winTitle: 'Congratulations!', 
+                winUnit: 'Points', 
+                playAgain: 'Play Again',
+            },
+            zh: {
+                mainTitle: '快攻籃球策略', 
+                subTitle: '根據防守者的位置，選擇正確的進攻策略，並將策略拖曳到對應的情境中。',
+                attack: '攻擊防守者', 
+                read: '閱讀防守者', 
+                space: '保持間距',
+                scenarioA: '情境 A', 
+                descA: '奮力切向防守者，迫使他做出選擇或創造得分機會。',
+                scenarioB: '情境 B', 
+                descB: '觀察防守者的動向，來決定要傳球還是自己切入上籃。',
+                scenarioC: '情境 C', 
+                descC: '和隊友保持良好距離，讓防守者難以同時防守兩名球員。',
+                dropZoneText: '將策略拖到此處', 
+                reset: '重置遊戲', 
+                langToggle: 'English',
+                winTitle: '恭喜獲勝！', 
+                winUnit: '分', 
+                playAgain: '再玩一次',
+            }
+        };
+
+        // --- Functions ---
+        const setLanguage = (lang) => {
+            document.documentElement.lang = lang === 'zh' ? 'zh-TW' : 'en';
+            currentLanguage = lang;
+            document.querySelectorAll('[data-lang-key]').forEach(el => {
+                const key = el.dataset.langKey;
+                if (translations[lang][key]) {
+                    el.textContent = translations[lang][key];
+                }
+            });
+        };
+
+        const handleDragStart = (e) => {
+            e.dataTransfer.setData('text/plain', e.target.id);
+            setTimeout(() => e.target.classList.add('dragging'), 0);
+        };
+        const handleDragEnd = (e) => e.target.classList.remove('dragging');
+        const handleDragOver = (e) => e.preventDefault();
+        const handleDragEnter = (e) => e.target.classList.contains('drop-zone') && e.target.classList.add('drag-over');
+        const handleDragLeave = (e) => e.target.classList.contains('drop-zone') && e.target.classList.remove('drag-over');
+
+        const handleDrop = (e) => {
+            e.preventDefault();
+            const dropZone = e.target.closest('.drop-zone');
+            if (!dropZone || dropZone.classList.contains('correct')) return;
+            dropZone.classList.remove('drag-over');
+            const draggedEl = document.getElementById(e.dataTransfer.getData('text/plain'));
+            if (draggedEl.dataset.strategy === dropZone.dataset.answer) {
+                dropZone.innerHTML = '';
+                dropZone.appendChild(draggedEl);
+                dropZone.classList.add('correct');
+                draggedEl.setAttribute('draggable', 'false');
+                draggedEl.style.cursor = 'default';
+                correctCount++;
+                checkWin();
+            } else {
+                dropZone.classList.add('incorrect');
+                setTimeout(() => dropZone.classList.remove('incorrect'), 500);
+            }
+        };
+        
+        const checkWin = () => {
+            if (correctCount === 3) {
+                setTimeout(() => winModal.classList.add('visible'), 300);
+            }
+        };
+
+        const resetGame = () => {
+            correctCount = 0;
+            winModal.classList.remove('visible');
+
+            // --- Shuffle and Reset Draggables ---
+            const strategyCards = Array.from(draggables);
+            // Fisher-Yates shuffle algorithm
+            for (let i = strategyCards.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [strategyCards[i], strategyCards[j]] = [strategyCards[j], strategyCards[i]];
+            }
+            strategyCards.forEach(card => {
+                strategyContainer.appendChild(card);
+                card.setAttribute('draggable', 'true');
+                card.style.cursor = 'grab';
+            });
+
+            // --- Reset Drop Zones ---
+            dropZones.forEach(zone => {
+                zone.innerHTML = `<span data-lang-key="dropZoneText">${translations[currentLanguage].dropZoneText}</span>`;
+                zone.classList.remove('correct', 'incorrect', 'drag-over');
+            });
+        };
+
+        const toggleLanguage = () => setLanguage(currentLanguage === 'en' ? 'zh' : 'en');
+
+        // --- Event Listeners ---
+        draggables.forEach(d => {
+            d.addEventListener('dragstart', handleDragStart);
+            d.addEventListener('dragend', handleDragEnd);
+        });
+        dropZones.forEach(z => {
+            z.addEventListener('dragover', handleDragOver);
+            z.addEventListener('dragenter', handleDragEnter);
+            z.addEventListener('dragleave', handleDragLeave);
+            z.addEventListener('drop', handleDrop);
+        });
+        resetButton.addEventListener('click', resetGame);
+        langToggleButton.addEventListener('click', toggleLanguage);
+        playAgainButton.addEventListener('click', resetGame);
+        winModal.addEventListener('click', (e) => {
+            if (e.target === winModal) resetGame();
+        });
+
+        // --- Initial Load ---
+        setLanguage('en');
+        resetGame(); // Call reset to shuffle on initial load
+
+    </script>
+</body>
+</html>
+
